@@ -391,7 +391,10 @@ pub fn execute_bench(args: &Bench) -> Result<(), Box<dyn error::Error>> {
         "/template/benches/gen_impl.rs.tpl"
     ));
 
-    let matching_parts = day_parts.iter().filter(|dp| dp.day == day).filter(|dp| {
+    let matching_parts = day_parts
+        .iter()
+        .filter(|dp| dp.day == day || args.all_days)
+        .filter(|dp| {
         if let Some(p) = part {
             dp.part == p
         } else {
@@ -399,23 +402,23 @@ pub fn execute_bench(args: &Bench) -> Result<(), Box<dyn error::Error>> {
         }
     });
 
-    let mut parts: Vec<_> = matching_parts.clone().map(|dp| dp.part).collect();
-    parts.sort();
-    parts.dedup();
+    let mut parts: Vec<_> = matching_parts.clone().collect();
+    parts.sort_by_key(|dp| (dp.day, dp.part));
+    parts.dedup_by_key(|dp| (dp.day, dp.part));
 
     let body: String = parts
         .into_iter()
-        .map(|p| {
-            let part_name = format!("day{}_part{}", day.0, p.0);
+        .map(|dp| {
+            let part_name = format!("day{}_part{}", dp.day.0, dp.part.0);
             part_tpl
                 .replace("{PART_NAME}", &part_name)
-                .replace("{DAY}", &day.0.to_string())
-                .replace("{PART}", &p.0.to_string())
+                .replace("{DAY}", &dp.day.0.to_string())
+                .replace("{PART}", &dp.part.0.to_string())
                 .replace(
                     "{IMPLS}",
                     &matching_parts
                         .clone()
-                        .filter(|dp| dp.part == p)
+                        .filter(|dp2| dp.day == dp2.day && dp.part == dp2.part)
                         .map(|dp| {
                             impl_tpl
                                 .replace(
@@ -452,23 +455,23 @@ pub fn execute_bench(args: &Bench) -> Result<(), Box<dyn error::Error>> {
     }
 
     let gens = if args.generator {
-        let mut parts: Vec<_> = matching_parts.clone().map(|dp| dp.part).collect();
+        let mut parts: Vec<_> = matching_parts.clone().collect();
         parts.sort();
-        parts.dedup();
+        parts.dedup_by_key(|dp| (dp.day, dp.part));
 
         parts
             .into_iter()
-            .map(|p| {
-                let gen_name = format!("day{}", day.0);
+            .map(|dp| {
+                let gen_name = format!("day{}", dp.day.0);
                 gen_tpl
                     .replace("{GEN_NAME}", &gen_name)
-                    .replace("{DAY}", &day.0.to_string())
-                    .replace("{PART}", &p.0.to_string())
+                    .replace("{DAY}", &dp.day.0.to_string())
+                    .replace("{PART}", &dp.part.0.to_string())
                     .replace(
                         "{IMPLS}",
                         &matching_parts
                             .clone()
-                            .filter(|dp| dp.part == p)
+                            .filter(|dp2| dp.day == dp2.day && dp.part == dp.part)
                             .map(|dp| {
                                 gen_impl_tpl
                                     .replace(
@@ -503,11 +506,25 @@ pub fn execute_bench(args: &Bench) -> Result<(), Box<dyn error::Error>> {
         String::new()
     };
 
-    let date = AOCDate {
-        day: u32::from(day.0),
-        year: year as i32,
-    };
-    download_input(date)?;
+    let mut days: Vec<_> = matching_parts.clone().map(|dp| dp.day).collect();
+    days.sort();
+    days.dedup();
+
+    let mut input_body = String::new();
+
+    for day in days {
+        let date = AOCDate {
+            day: u32::from(day.0),
+            year: year as i32,
+        };
+        download_input(date)?;
+
+        input_body += &template_input(day, year, args.input.as_deref())
+    }
+
+    if input_body.is_empty() {
+        return Err("No matching day".into());
+    }
 
     let main_content = bench_tpl
         .replace("{CRATE_SLUG}", &pm.slug)
@@ -523,7 +540,7 @@ pub fn execute_bench(args: &Bench) -> Result<(), Box<dyn error::Error>> {
         )
         .replace(
             "{INPUTS}",
-            &template_input(day, year, args.input.as_deref()),
+            &input_body,
         );
 
     fs::create_dir_all("target/aoc/aoc-autobench/benches")

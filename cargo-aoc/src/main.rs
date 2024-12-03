@@ -55,6 +55,10 @@ pub struct Bench {
     #[clap(short, long)]
     day: Option<Day>,
 
+    /// Run the benchmark for all days
+    #[clap(long, conflicts_with_all = ["day", "input"])]
+    all_days: bool,
+
     /// Specifies the part. Defaults to both parts.
     #[clap(short, long)]
     part: Option<Part>,
